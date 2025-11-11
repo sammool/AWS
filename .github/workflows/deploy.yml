@@ -53,7 +53,6 @@ jobs:
             pkill -f app.jar || true
             sleep 3
             nohup java -jar /home/$EC2_USERNAME/app.jar > /home/$EC2_USERNAME/app.log 2>&1 &
-            echo '✅ New app started!'
           "
 
           rm -f private_key.pem
