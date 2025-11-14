@@ -2,12 +2,13 @@ name: Simple CI/CD (Direct Secrets Injection)
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches: [ "main" ]     # main 브랜치에 push/merge 되면 자동 실행
+  workflow_dispatch:          # 수동 실행 가능
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v3
@@ -30,21 +31,19 @@ jobs:
           EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
           EC2_HOST: ${{ secrets.EC2_HOST }}
 
-          # DB / AWS 환경 변수
-          DB_URL: ${{ secrets.DB_URL }}
-          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          # Spring Boot에서 사용할 DB / AWS 환경 변수
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
+
         run: |
           echo "🔑 Setting up SSH key..."
           echo "$EC2_SSH_KEY" > private_key.pem
           chmod 600 private_key.pem
 
-          # 빌드된 JAR 찾기
+          # 빌드된 JAR 파일 찾기 (plain.jar 제외)
           jar_file=$(find build/libs -name '*.jar' ! -name '*plain.jar' | head -n 1)
-
           if [ ! -f "$jar_file" ]; then
             echo "🚨 JAR not found. Deploy failed."
             exit 1
@@ -55,23 +54,19 @@ jobs:
           scp -i private_key.pem -o StrictHostKeyChecking=no "$jar_file" $EC2_USERNAME@$EC2_HOST:/home/$EC2_USERNAME/app/app.jar
 
           echo "✅ Restarting application on EC2..."
-          ssh -i private_key.pem -o StrictHostKeyChecking=no $EC2_USERNAME@$EC2_HOST << 'EOF'
-            # 앱 디렉토리 생성
-            mkdir -p /home/$EC2_USERNAME/app
+          ssh -i private_key.pem -o StrictHostKeyChecking=no $EC2_USERNAME@$EC2_HOST << EOF
+          mkdir -p /home/$EC2_USERNAME/app
+          pkill -f app.jar || true
+          sleep 3
 
-            # 기존 프로세스 종료
-            pkill -f app.jar || true
-            sleep 3
+          # 환경 변수를 Java 실행 앞에 직접 붙여서 주입
+          DB_PASSWORD="${DB_PASSWORD}" \
+          AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
+          AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
+          AWS_REGION="${AWS_REGION}" \
+          nohup /usr/bin/java -jar /home/$EC2_USERNAME/app/app.jar > /home/$EC2_USERNAME/app/app.log 2>&1 &
 
-            # 환경 변수 export
-            export DB_URL="${DB_URL}"
-            export DB_USERNAME="${DB_USERNAME}"
-            export DB_PASSWORD="${DB_PASSWORD}"
-            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
-            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
-            export AWS_REGION="${AWS_REGION}"
-
-            nohup /usr/bin/java -jar /home/$EC2_USERNAME/app/app.jar > /home/$EC2_USERNAME/app/app.log 2>&1 &
+          echo '✅ New app started!'
           EOF
-
+  
           rm -f private_key.pem
