@@ -8,7 +8,6 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout source
         uses: actions/checkout@v3
@@ -38,8 +37,6 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
-
-
         run: |
           echo "🔑 Setting up SSH key..."
           echo "$EC2_SSH_KEY" > private_key.pem
@@ -58,29 +55,23 @@ jobs:
           scp -i private_key.pem -o StrictHostKeyChecking=no "$jar_file" $EC2_USERNAME@$EC2_HOST:/home/$EC2_USERNAME/app/app.jar
 
           echo "✅ Restarting application on EC2..."
-          ssh -i private_key.pem -o StrictHostKeyChecking=no $EC2_USERNAME@$EC2_HOST << EOF
+          ssh -i private_key.pem -o StrictHostKeyChecking=no $EC2_USERNAME@$EC2_HOST << 'EOF'
+            # 앱 디렉토리 생성
+            mkdir -p /home/$EC2_USERNAME/app
 
-          # 앱 디렉토리 생성
-          mkdir -p /home/$EC2_USERNAME/app
+            # 기존 프로세스 종료
+            pkill -f app.jar || true
+            sleep 3
 
-          # 기존 프로세스 종료
-          pkill -f app.jar || true
-          sleep 3
+            # 환경 변수 export
+            export DB_URL="${DB_URL}"
+            export DB_USERNAME="${DB_USERNAME}"
+            export DB_PASSWORD="${DB_PASSWORD}"
+            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+            export AWS_REGION="${AWS_REGION}"
 
-          # ⭐ 핵심: 모든 환경 변수를 export하여 Java 프로세스에 주입 ⭐
-          export DB_URL="${DB_URL}"
-          export DB_USERNAME="${DB_USERNAME}"
-          export DB_PASSWORD="${DB_PASSWORD}"
-          export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
-          export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
-          export AWS_REGION="${AWS_REGION}"
-          
-
-          # 애플리케이션 실행
-          nohup /usr/bin/java -jar /home/$EC2_USERNAME/app/app.jar > /home/$EC2_USERNAME/app/app.log 2>&1 &
-
-          echo '✅ New app started!'
+            nohup /usr/bin/java -jar /home/$EC2_USERNAME/app/app.jar > /home/$EC2_USERNAME/app/app.log 2>&1 &
           EOF
 
-  # Private Key 삭제
           rm -f private_key.pem
