@@ -58,6 +58,9 @@ jobs:
           mkdir -p /home/$EC2_USERNAME/app
           pkill -f app.jar || true
           sleep 3
+          
+          # 실행 권한 추가
+          chmod +x /home/$EC2_USERNAME/app/app.jar
 
           # 환경 변수를 Java 실행 앞에 직접 붙여서 주입
           DB_PASSWORD="${DB_PASSWORD}" \
